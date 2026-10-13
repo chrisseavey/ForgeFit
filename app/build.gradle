@@ -3,11 +3,32 @@ dependencies { implementation 'androidx.webkit:webkit:1.12.1' }
 android {
     namespace 'com.forgefit.personal'
     compileSdk 35
+    lint {
+        checkReleaseBuilds false
+    }
     defaultConfig {
         applicationId 'com.forgefit.personal'
         minSdk 26
         targetSdk 35
         versionCode 45
         versionName '4.5'
+    }
+    signingConfigs {
+        release {
+            def keyFile = System.getenv('FORGEFIT_KEYSTORE_FILE')
+            if (keyFile) {
+                storeFile file(keyFile)
+                storePassword System.getenv('FORGEFIT_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('FORGEFIT_KEY_ALIAS')
+                keyPassword System.getenv('FORGEFIT_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (System.getenv('FORGEFIT_KEYSTORE_FILE')) {
+                signingConfig signingConfigs.release
+            }
+        }
     }
 }

@@ -1,0 +1,13 @@
+plugins { id 'com.android.application' }
+dependencies { implementation 'androidx.webkit:webkit:1.12.1' }
+android {
+    namespace 'com.forgefit.personal'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.forgefit.personal'
+        minSdk 26
+        targetSdk 35
+        versionCode 43
+        versionName '4.3'
+    }
+}

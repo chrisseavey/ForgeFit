@@ -13,6 +13,8 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
+import android.webkit.ValueCallback;
+import android.provider.MediaStore;
 import org.json.JSONObject;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -30,6 +32,9 @@ import java.io.File;
 
 public class MainActivity extends Activity {
     private WebView web;
+    private static final int PICK_FOOD_PHOTO = 7403;
+    private ValueCallback<Uri[]> foodPhotoCallback;
+    private Uri foodCameraUri;
     private static final int EXPORT_BACKUP = 7401;
     private static final int IMPORT_BACKUP = 7402;
     private String pendingBackup;
@@ -69,6 +74,16 @@ public class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == PICK_FOOD_PHOTO) {
+            if (foodPhotoCallback != null) {
+                Uri selected = data != null ? data.getData() : null;
+                if (resultCode == RESULT_OK && selected == null) selected = foodCameraUri;
+                foodPhotoCallback.onReceiveValue(resultCode == RESULT_OK && selected != null ? new Uri[]{selected} : null);
+                foodPhotoCallback = null;
+                foodCameraUri = null;
+            }
+            return;
+        }
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         try {
             if (requestCode == EXPORT_BACKUP && pendingBackup != null) {
@@ -179,7 +194,30 @@ public class MainActivity extends Activity {
                 return false;
             }
         });
-        web.setWebChromeClient(new WebChromeClient());
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (foodPhotoCallback != null) foodPhotoCallback.onReceiveValue(null);
+                foodPhotoCallback = callback;
+                try {
+                    Intent gallery = new Intent(Intent.ACTION_GET_CONTENT);
+                    gallery.addCategory(Intent.CATEGORY_OPENABLE);
+                    gallery.setType("image/*");
+                    Intent chooser = Intent.createChooser(gallery, "Choose food photo");
+                    File photo = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "forgefit-food-photo.jpg");
+                    foodCameraUri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", photo);
+                    Intent camera = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                    camera.putExtra(MediaStore.EXTRA_OUTPUT, foodCameraUri);
+                    camera.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                    chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[]{camera});
+                    startActivityForResult(chooser, PICK_FOOD_PHOTO);
+                } catch (Exception ex) {
+                    foodPhotoCallback.onReceiveValue(null);
+                    foodPhotoCallback = null;
+                    Toast.makeText(MainActivity.this, "Could not open photo chooser", Toast.LENGTH_SHORT).show();
+                }
+                return true;
+            }
+        });
         web.addJavascriptInterface(new UpdateBridge(), "ForgeFitUpdates");
         web.addJavascriptInterface(new BackupBridge(), "ForgeFitBackup");
         setContentView(web);

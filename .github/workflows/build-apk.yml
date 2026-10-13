@@ -28,5 +28,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ForgeFit-v4.3-debug-apk
+          name: ForgeFit-Android-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk

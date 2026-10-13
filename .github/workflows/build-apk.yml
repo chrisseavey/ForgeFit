@@ -1,15 +1,16 @@
-name: Build ForgeFit APK
+name: Build signed ForgeFit APK
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -23,10 +24,35 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build APK
-        run: gradle :app:assembleDebug --no-daemon
-      - name: Upload APK
+      - name: Restore release signing key
+        env:
+          FORGEFIT_KEYSTORE_BASE64: ${{ secrets.FORGEFIT_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$FORGEFIT_KEYSTORE_BASE64" || { echo "Missing signing key secret"; exit 1; }
+          printf '%s' "$FORGEFIT_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/forgefit-release.jks"
+      - name: Build signed release APK
+        env:
+          FORGEFIT_KEYSTORE_FILE: ${{ runner.temp }}/forgefit-release.jks
+          FORGEFIT_KEYSTORE_PASSWORD: ${{ secrets.FORGEFIT_KEYSTORE_PASSWORD }}
+          FORGEFIT_KEY_PASSWORD: ${{ secrets.FORGEFIT_KEY_PASSWORD }}
+          FORGEFIT_KEY_ALIAS: ${{ secrets.FORGEFIT_KEY_ALIAS }}
+        run: |
+          test -n "$FORGEFIT_KEYSTORE_PASSWORD" && test -n "$FORGEFIT_KEY_PASSWORD" && test -n "$FORGEFIT_KEY_ALIAS"
+          gradle :app:assembleRelease --no-daemon
+          test -s app/build/outputs/apk/release/app-release.apk
+      - name: Upload signed APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ForgeFit-Android-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: ForgeFit-signed-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep -m1 'versionName ' app/build.gradle | sed -E "s/.*versionName '([^']+)'.*/\\1/")
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" app/build/outputs/apk/release/app-release.apk --clobber
+          else
+            gh release create "$TAG" app/build/outputs/apk/release/app-release.apk --title "ForgeFit $TAG" --notes "Signed Android APK for ForgeFit $TAG."
+          fi

@@ -13,6 +13,11 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
+import org.json.JSONObject;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.io.ByteArrayOutputStream;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -25,6 +30,9 @@ import java.io.File;
 
 public class MainActivity extends Activity {
     private WebView web;
+    private static final int EXPORT_BACKUP = 7401;
+    private static final int IMPORT_BACKUP = 7402;
+    private String pendingBackup;
     private long updateDownloadId = -1;
     private BroadcastReceiver downloadReceiver;
 
@@ -38,6 +46,56 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    public class BackupBridge {
+        @JavascriptInterface public void exportBackup(String json) {
+            runOnUiThread(() -> {
+                pendingBackup = json;
+                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("application/json");
+                intent.putExtra(Intent.EXTRA_TITLE, "forgefit-backup.json");
+                startActivityForResult(intent, EXPORT_BACKUP);
+            });
+        }
+        @JavascriptInterface public void importBackup() {
+            runOnUiThread(() -> {
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("application/json");
+                startActivityForResult(intent, IMPORT_BACKUP);
+            });
+        }
+    }
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        try {
+            if (requestCode == EXPORT_BACKUP && pendingBackup != null) {
+                try (OutputStream stream = getContentResolver().openOutputStream(data.getData())) {
+                    if (stream == null) throw new Exception("Cannot open destination");
+                    stream.write(pendingBackup.getBytes(StandardCharsets.UTF_8));
+                }
+                pendingBackup = null;
+                Toast.makeText(this, "ForgeFit backup saved", Toast.LENGTH_LONG).show();
+            } else if (requestCode == IMPORT_BACKUP) {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                try (InputStream in = getContentResolver().openInputStream(data.getData())) {
+                    if (in == null) throw new Exception("Cannot open backup");
+                    byte[] buffer = new byte[8192];
+                    int n;
+                    while ((n = in.read(buffer)) != -1) {
+                        out.write(buffer, 0, n);
+                        if (out.size() > 10000000) throw new Exception("Backup file too large");
+                    }
+                }
+                String json = out.toString("UTF-8");
+                web.evaluateJavascript("receiveForgeBackup(" + JSONObject.quote(json) + ")", null);
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Backup error: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
     private void startUpdateDownload(String tag) {
         if (tag == null || !tag.matches("v[0-9]+\\.[0-9]+(\\.[0-9]+)?")) {
             Toast.makeText(this, "Invalid update version", Toast.LENGTH_LONG).show();
@@ -123,6 +181,7 @@ public class MainActivity extends Activity {
         });
         web.setWebChromeClient(new WebChromeClient());
         web.addJavascriptInterface(new UpdateBridge(), "ForgeFitUpdates");
+        web.addJavascriptInterface(new BackupBridge(), "ForgeFitBackup");
         setContentView(web);
         web.loadUrl("https://appassets.androidplatform.net/assets/index.html");
     }

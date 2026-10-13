@@ -1,6 +1,9 @@
 package com.forgefit.personal;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
+import android.webkit.JavascriptInterface;
 import android.os.Bundle;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
@@ -12,6 +15,14 @@ import androidx.webkit.WebViewAssetLoader;
 import android.graphics.Color;
 
 public class MainActivity extends Activity {
+    public class UpdateBridge {
+        @JavascriptInterface public void openRelease() {
+            runOnUiThread(() -> {
+                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/chrisseavey/ForgeFit/releases/latest"));
+                startActivity(intent);
+            });
+        }
+    }
     private WebView web;
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -30,8 +41,16 @@ public class MainActivity extends Activity {
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 return loader.shouldInterceptRequest(request.getUrl());
             }
+            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                if (!"appassets.androidplatform.net".equals(request.getUrl().getHost())) {
+                    startActivity(new Intent(Intent.ACTION_VIEW, request.getUrl()));
+                    return true;
+                }
+                return false;
+            }
         });
         web.setWebChromeClient(new WebChromeClient());
+        web.addJavascriptInterface(new UpdateBridge(), "ForgeFitUpdates");
         setContentView(web);
         web.loadUrl("https://appassets.androidplatform.net/assets/index.html");
     }

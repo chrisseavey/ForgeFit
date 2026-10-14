@@ -80,7 +80,7 @@ public class MainActivity extends Activity {
                     result = new JSONObject(body).toString();
                 } catch (Exception ex) {
                     try {result = new JSONObject().put("error", "Scanner connection: " + ex.getMessage()).toString();}
-                    catch (Exception ignored) {result = "{\\"error\\":\\"Scanner connection failed\\"}";}
+                    catch (Exception ignored) {result = "{}";}
                 } finally {if (connection != null) connection.disconnect();}
                 final String response = result;
                 runOnUiThread(() -> web.evaluateJavascript("forgeFoodScanComplete(" + JSONObject.quote(response) + ")", null));

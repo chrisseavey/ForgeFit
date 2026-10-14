@@ -29,6 +29,8 @@ import android.widget.Toast;
 import androidx.core.content.FileProvider;
 import androidx.webkit.WebViewAssetLoader;
 import java.io.File;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 public class MainActivity extends Activity {
     private WebView web;
@@ -40,6 +42,51 @@ public class MainActivity extends Activity {
     private String pendingBackup;
     private long updateDownloadId = -1;
     private BroadcastReceiver downloadReceiver;
+
+    public class FoodScanBridge {
+        @JavascriptInterface public void analyze(String endpoint, String image) {
+            new Thread(() -> {
+                String result;
+                HttpURLConnection connection = null;
+                try {
+                    Uri uri = Uri.parse(endpoint);
+                    if (!"https".equals(uri.getScheme()) || !"script.google.com".equals(uri.getHost())
+                        || !uri.getPath().matches("/macros/s/[^/]+/exec")) {
+                        throw new Exception("Scanner URL must be a Google Apps Script web app /exec URL.");
+                    }
+                    if (image == null || image.length() > 2800000 || !image.startsWith("data:image/")) {
+                        throw new Exception("Please choose a smaller valid photo.");
+                    }
+                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                    connection.setRequestMethod("POST");
+                    connection.setConnectTimeout(15000);
+                    connection.setReadTimeout(45000);
+                    connection.setDoOutput(true);
+                    connection.setInstanceFollowRedirects(true);
+                    connection.setRequestProperty("Content-Type", "application/json");
+                    byte[] bytes = new JSONObject().put("image", image).toString().getBytes(StandardCharsets.UTF_8);
+                    try (OutputStream out = connection.getOutputStream()) {out.write(bytes);}
+                    int status = connection.getResponseCode();
+                    InputStream stream = status < 400 ? connection.getInputStream() : connection.getErrorStream();
+                    if (stream == null) throw new Exception("No response from scanner (HTTP " + status + ")");
+                    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                    byte[] chunk = new byte[8192]; int n;
+                    while ((n = stream.read(chunk)) != -1) {
+                        buffer.write(chunk, 0, n);
+                        if (buffer.size() > 30000) throw new Exception("Unexpected scanner response.");
+                    }
+                    String body = buffer.toString("UTF-8");
+                    if (status >= 400) throw new Exception("Scanner HTTP " + status + ". Check deployment access.");
+                    result = new JSONObject(body).toString();
+                } catch (Exception ex) {
+                    try {result = new JSONObject().put("error", "Scanner connection: " + ex.getMessage()).toString();}
+                    catch (Exception ignored) {result = "{\\"error\\":\\"Scanner connection failed\\"}";}
+                } finally {if (connection != null) connection.disconnect();}
+                final String response = result;
+                runOnUiThread(() -> web.evaluateJavascript("forgeFoodScanComplete(" + JSONObject.quote(response) + ")", null));
+            }).start();
+        }
+    }
 
     public class UpdateBridge {
         @JavascriptInterface public void openRelease() {
@@ -219,6 +266,7 @@ public class MainActivity extends Activity {
             }
         });
         web.addJavascriptInterface(new UpdateBridge(), "ForgeFitUpdates");
+        web.addJavascriptInterface(new FoodScanBridge(), "ForgeFitFoodScan");
         web.addJavascriptInterface(new BackupBridge(), "ForgeFitBackup");
         setContentView(web);
         web.loadUrl("https://appassets.androidplatform.net/assets/index.html");

@@ -54,8 +54,8 @@ public class MainActivity extends Activity {
                         || !uri.getPath().matches("/macros/s/[^/]+/exec")) {
                         throw new Exception("Scanner URL must be a Google Apps Script web app /exec URL.");
                     }
-                    if (image == null || image.length() > 2800000 || !image.startsWith("data:image/")) {
-                        throw new Exception("Please choose a smaller valid photo.");
+                    if (image == null || image.length() > 2800000 || (!image.startsWith("data:image/") && (image.trim().length() < 2 || image.length() > 500))) {
+                        throw new Exception("Please enter a food description or choose a valid photo.");
                     }
                     connection = (HttpURLConnection) new URL(endpoint).openConnection();
                     connection.setRequestMethod("POST");
@@ -64,7 +64,7 @@ public class MainActivity extends Activity {
                     connection.setDoOutput(true);
                     connection.setInstanceFollowRedirects(true);
                     connection.setRequestProperty("Content-Type", "application/json");
-                    byte[] bytes = new JSONObject().put("image", image).toString().getBytes(StandardCharsets.UTF_8);
+                    byte[] bytes = new JSONObject().put(image.startsWith("data:image/") ? "image" : "description", image).toString().getBytes(StandardCharsets.UTF_8);
                     try (OutputStream out = connection.getOutputStream()) {out.write(bytes);}
                     int status = connection.getResponseCode();
                     InputStream stream = status < 400 ? connection.getInputStream() : connection.getErrorStream();

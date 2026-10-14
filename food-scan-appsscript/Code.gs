@@ -1,19 +1,19 @@
-const MODEL = 'gemini-2.5-flash';
+const MODEL = 'gemini-3.5-flash-lite';
 function doPost(e) {
   try {
     const input = JSON.parse(e.postData.contents);
-    if (!input.image || !/^data:image\/(jpeg|png|webp);base64,/.test(input.image)) {
-      return output({error:'Please select a valid food photo.'});
-    }
-    if (input.image.length > 2800000) return output({error:'Photo is too large.'});
+    const isText = typeof input.description === 'string' && input.description.trim().length > 1;
+    if (!isText && (!input.image || !/^data:image\/(jpeg|png|webp);base64,/.test(input.image))) return output({error:'Enter a food or select a photo.'});
+    if (!isText && input.image.length > 2800000) return output({error:'Photo is too large.'});
+    if (isText && input.description.length > 500) return output({error:'Food description is too long.'});
     const key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
     if (!key) return output({error:'Gemini API key is not configured.'});
-    const parts = input.image.split(',');
-    const mimeType = parts[0].match(/^data:(image\/[^;]+);/)[1];
+    const parts = isText ? [] : input.image.split(',');
+    const mimeType = isText ? '' : parts[0].match(/^data:(image\/[^;]+);/)[1];
     const payload = {
       contents:[{parts:[
-        {text:'Analyze this meal photo. Estimate total meal portion and macros. Respond with JSON only: {"name":"short food description","serving":"estimated portion size","calories":number,"protein":number,"carbs":number,"fat":number,"notes":"brief uncertainty warning"}. If no food is visible, return {"error":"No food identified"}. Values are estimates. Account for likely oils/sauces, but do not pretend exactness.'},
-        {inline_data:{mime_type:mimeType,data:parts[1]}}
+        {text:(isText ? 'Estimate the nutrition of this described food and quantity: '+input.description.trim() : 'Analyze this meal photo, including any visible nutrition facts label.')+' Respond with JSON only: {"name":"short food description","serving":"estimated portion size","calories":number,"protein":number,"carbs":number,"fat":number,"notes":"brief uncertainty warning"}. For a clear nutrition label use printed values and serving size; otherwise estimate realistic meal portions. Values are estimates. Account for likely oils/sauces, but do not pretend exactness.'},
+        ...(isText ? [] : [{inline_data:{mime_type:mimeType,data:parts[1]}}])
       ]}],
       generationConfig:{responseMimeType:'application/json',temperature:0.2}
     };
